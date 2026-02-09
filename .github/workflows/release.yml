@@ -21,6 +21,11 @@ jobs:
         with:
           go-version: '1.24' # 与 go.mod 保持一致
 
+      - name: Initialize Go Module
+        run: |
+          go mod init jvm_gc_collector
+          go mod tidy
+
       - name: Build Linux AMD64 (Standard)
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o jvm_gc_collector_linux_amd64 main.go
