@@ -1,86 +1,81 @@
-# JVM 监控工具（jvm-node）技术文档
+# JVM GC Collector 操作手册
 
-## 项目概述
-这是一个基于 Prometheus 的 JVM 监控工具，用于收集和导出 Java 虚拟机的 GC（垃圾回收）相关指标。
+## 1. 简介
+一个用于采集 Java 虚拟机（JVM）垃圾回收（GC）指标的轻量级 Exporter。它通过调用 `jstat` 命令获取数据，并将其转换为 Prometheus 格式，便于监控系统抓取。
 
-## 主要功能
-1. **JVM进程发现**
-   - 自动发现并监控系统中运行的 Java 进程
-   - 支持进程过滤功能
-   - 自动清理已停止进程的监控数据
+**适用环境**：Linux 
+**架构支持**：AMD64 (x86_64)
+## 2. 部署步骤
 
-2. **GC指标收集**
-   - 收集新生代（Young Generation）使用情况
-   - 收集老年代（Old Generation）使用情况
-   - 收集元空间（Metaspace）使用情况
-   - 监控 GC 次数和时间
+### 2.1 上传二进制文件
+二进制文件上传到服务器：
+- **x86_64 (Intel/AMD)**: 使用 `jvm_gc_collector_centos7_2026`
 
-3. **应用标识**
-   - 支持通过 JVM 参数自动识别应用名称
-   - 可配置多个应用名称标识参数
-   - 默认支持 Spring Boot 应用名称识别
 
-## 配置说明
-```yaml
-listen_port: 9101            # 监听端口
-scrape_interval: 30s         # 采集间隔
-jstat_timeout: 5s            # jstat命令超时时间
-max_monitored_processes: 1000 # 最大监控进程数
-max_concurrent_scrapes: 50    # 最大并发采集数
-jstat_path: jstat           # jstat命令路径
-log_level: info             # 日志级别
-pid_filter: ""              # 进程过滤表达式
-app_name_labels:            # 应用名称标识参数列表
-  - "-Dapp.name"
-  - "-Dapp"
-  - "-Dspring.application.name"
+### 2.2 赋予执行权限
+```bash
+chmod +x jvm_gc_collector_centos7
 ```
 
-## 监控指标
-### 容量指标（Gauge）
-- `jvm_gc_s0_capacity_bytes`: S0区容量
-- `jvm_gc_s1_capacity_bytes`: S1区容量
-- `jvm_gc_eden_capacity_bytes`: Eden区容量
-- `jvm_gc_old_gen_capacity_bytes`: 老年代容量
-- `jvm_gc_metaspace_capacity_bytes`: 元空间容量
-- `jvm_gc_compressed_class_capacity_bytes`: 压缩类空间容量
+### 2.3 首次运行生成配置
+首次运行程序会自动在当前目录生成默认配置文件 `config.yml`：
+```bash
+./jvm_gc_collector_centos7
+```
+*注意：首次运行提示 `pid_filter is empty`，这是正常现象，继续下一步配置。*
 
-### 使用量指标（Gauge）
-- `jvm_gc_s0_usage_bytes`: S0区使用量
-- `jvm_gc_s1_usage_bytes`: S1区使用量
-- `jvm_gc_eden_usage_bytes`: Eden区使用量
-- `jvm_gc_old_gen_usage_bytes`: 老年代使用量
-- `jvm_gc_metaspace_usage_bytes`: 元空间使用量
-- `jvm_gc_compressed_class_usage_bytes`: 压缩类空间使用量
+## 3. 配置说明
 
-### GC统计指标（Counter）
-- `jvm_gc_young_gc_count`: Young GC次数
-- `jvm_gc_young_gc_time_seconds`: Young GC总时间
-- `jvm_gc_full_gc_count`: Full GC次数
-- `jvm_gc_full_gc_time_seconds`: Full GC总时间
-- `jvm_gc_total_gc_time_seconds`: GC总时间
+编辑生成的 `config.yml` 文件：
 
-## 特性
-1. **动态配置加载**
-   - 支持配置文件热重载（SIGHUP信号）
-   - 自动创建默认配置文件
+```yaml
+listen_port: 9101              # Exporter 监听端口
+scrape_interval: 30s           # 采集间隔(prometheus如果15s采集一次,只会采集到上一次的数据)
+jstat_timeout: 5s              # jstat 命令超时时间
+max_monitored_processes: 1000  # 最大监控进程数(修改为5)
+max_concurrent_scrapes: 50     # 最大并发采集数(修改为5)
+jstat_path: ""                 # jstat 路径，留空默认使用系统环境变量中的 jstat
+log_level: "info"              # 日志级别
+pid_filter: "tomcat"           # 【必填】进程过滤关键字。例如 "tomcat", "java_app"。支持热加载，修改后5秒生效。
+log_path: "jvm_gc_collector.log" # 日志文件路径
+max_log_size: 200              # 日志最大大小 (MB)，超过后会备份并重置
+```
 
-2. **高性能设计**
-   - 使用协程池并发采集
-   - 内存复用（Buffer Pool）
-   - 高效的指标存储和更新
+**关键配置项**：
+*   **`pid_filter`**: **必须填写**。程序会通过 `ps -ef | grep <keyword>` 来查找目标 Java 进程。如果留空，程序将拒绝启动。
+*   **`max_log_size`**: 日志文件限制为 200MB。当达到限制时，旧日志会被重命名为 `.old`（仅保留一份备份），新日志继续写入，**不会**无限增长占用磁盘。
 
-3. **可靠性保障**
-   - 超时控制
-   - 错误处理和日志记录
-   - 进程存活性检查
+## 4. 启动与验证
 
-## API接口
-- `/metrics`: Prometheus指标接口
-- `/health`: 健康检查接口
+### 4.1 启动程序
+配置完成后，再次启动程序：
+```bash
+./jvm_gc_collector_centos7
+```
+或者后台运行：
+```bash
+nohup ./jvm_gc_collector_centos7 > /dev/null 2>&1 &
+```
 
-## 使用建议
-1. 合理设置采集间隔和超时时间
-2. 根据系统规模调整最大监控进程数和并发采集数
-3. 使用进程过滤功能减少无关进程的监控
-4. 配置合适的应用名称标识参数以便于识别应用
+### 4.2 验证指标
+访问 Metrics 接口验证数据：
+```bash
+curl http://localhost:9101/metrics
+```
+应能看到 `jvm_gc_` 开头的指标，例如：
+*   `jvm_gc_young_gc_count`: Young GC 次数
+*   `jvm_gc_full_gc_count`: Full GC 次数
+*   `jvm_gc_old_gen_usage_bytes`: 老年代使用量
+
+## 5. 常见问题排查
+
+**Q1: 日志报错 `failed to execute jstat ... exit status 1`**
+*   **原因**：权限不足。采集器用户与目标 Java 进程用户不一致。
+*   **解决**：请确保采集器以 **启动 Java 进程的相同用户**（或 root）身份运行。
+
+**Q2: 报错 `pid_filter is empty`**
+*   **原因**：`config.yml` 中未配置 `pid_filter`。
+*   **解决**：编辑配置文件，填入能唯一匹配目标进程的关键字。
+
+**Q3: 找不到 `jstat` 命令**
+*   **解决**：在 `config.yml` 的 `jstat_path` 中填写 jstat 的绝对路径（如 `/usr/java/jdk1.8/bin/jstat`），或确保将其加入系统 PATH。
