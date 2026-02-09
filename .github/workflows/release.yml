@@ -1,0 +1,47 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*' # 当推送 v1.0.0 这样的 tag 时触发
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24' # 与 go.mod 保持一致
+
+      - name: Build Linux AMD64 (Standard)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o jvm_gc_collector_linux_amd64 main.go
+
+      - name: Build Linux ARM64
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o jvm_gc_collector_linux_arm64 main.go
+
+      - name: Build Linux AMD64 (CentOS 7 Compatible)
+        run: |
+          # 实际上 CGO_ENABLED=0 已经足以兼容 CentOS 7，这里为了区分之前的命名习惯保留该文件名
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o jvm_gc_collector_centos7 main.go
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            jvm_gc_collector_linux_amd64
+            jvm_gc_collector_linux_arm64
+            jvm_gc_collector_centos7
+          draft: false
+          prerelease: false
+          generate_release_notes: true # 自动生成更新日志
